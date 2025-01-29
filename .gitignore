@@ -169,3 +169,27 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Временные файлы
+=3.0.0
+
+# Конфиденциальные данные
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Логи
+*.log
+
+# База данных
+*.db
+*.sqlite
+*.sqlite3
+
+# Системные файлы
+.DS_Store
+Thumbs.db
