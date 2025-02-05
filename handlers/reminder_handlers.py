@@ -17,10 +17,14 @@ def send_reminder(bot: telebot.TeleBot, user_id: int, habit_name: str):
         logging.error(f"Ошибка отправки напоминания: {e}")
 
 def handle_completion(bot: telebot.TeleBot, call):
-    habit_name = call.data.split("_")[1]
-    # Здесь будет логика сохранения выполнения в БД
+    habit_id = int(call.data.split("_")[1])
+    
+    # Сохраняем выполнение в БД
+    from database.db import complete_habit
+    complete_habit(habit_id)
+    
     bot.edit_message_text(
-        f"✅ Отлично! Привычка '{habit_name}' отмечена как выполненная!",
+        f"✅ Отлично! Привычка отмечена как выполненная!",
         call.message.chat.id,
         call.message.message_id
     )

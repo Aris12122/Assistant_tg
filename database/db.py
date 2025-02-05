@@ -79,34 +79,39 @@ def delete_habit(habit_id: int):
     finally:
         session.close()
 
-def add_test_completions():
-    """Добавляет тестовые данные выполнения привычек"""
+def get_habit_by_id(habit_id: int) -> Habit:
     session = Session()
     try:
-        # Получаем все активные привычки
-        habits = session.query(Habit).filter_by(is_active=True).all()
+        habit = session.query(Habit).filter_by(id=habit_id, is_active=True).first()
+        return habit
+    finally:
+        session.close()
+
+def calculate_streak(habit_id: int) -> int:
+    session = Session()
+    try:
+        completions = session.query(HabitCompletion)\
+            .filter_by(habit_id=habit_id)\
+            .order_by(HabitCompletion.completed_at.desc())\
+            .all()
         
-        # Для каждой привычки добавляем случайные выполнения за последний месяц
-        from datetime import datetime, timedelta
-        import random
+        if not completions:
+            return 0
+            
+        streak = 0
+        last_date = None
         
-        for habit in habits:
-            # Создаем от 10 до 25 выполнений за последний месяц
-            for _ in range(random.randint(10, 25)):
-                # Случайная дата в последние 30 дней
-                random_days = random.randint(0, 30)
-                completion_date = datetime.now() - timedelta(days=random_days)
+        for completion in completions:
+            current_date = completion.completed_at.date()
+            if last_date is None:
+                last_date = current_date
+                streak = 1
+            elif (last_date - current_date).days == 1:
+                streak += 1
+                last_date = current_date
+            else:
+                break
                 
-                completion = HabitCompletion(
-                    habit_id=habit.id,
-                    completed_at=completion_date
-                )
-                session.add(completion)
-        
-        session.commit()
-        return True
-    except Exception as e:
-        print(f"Ошибка при добавлении тестовых данных: {e}")
-        return False
+        return streak
     finally:
         session.close() 

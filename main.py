@@ -2,7 +2,7 @@ import telebot
 import logging
 from config.config import TOKEN, ADMIN_IDS
 from handlers import habit_handlers, reminder_handlers, stats_handlers
-from database.db import get_or_create_user, add_habit, get_user_habits, get_session, get_habit_stats, delete_habit, add_test_completions
+from database.db import get_or_create_user, add_habit, get_user_habits, get_session, get_habit_stats, delete_habit
 from utils.keyboards import get_frequency_keyboard, get_time_keyboard, get_habit_management_keyboard
 from utils.scheduler import HabitScheduler
 from database.classes import Habit
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 import matplotlib.pyplot as plt
 import io
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from utils.gpt_helper import GPTHelper
 
 # Инициализация бота и планировщика
 bot = telebot.TeleBot(TOKEN)
@@ -17,6 +18,9 @@ scheduler = HabitScheduler(bot)
 
 # Словарь для хранения временных данных при создании привычки
 user_states = {}
+
+# Инициализация GPT помощника
+gpt = GPTHelper()
 
 # Базовые хендлеры
 @bot.message_handler(commands=['start'])
@@ -142,13 +146,26 @@ def show_help(message):
         "/addhabit - Добавить новую привычку\n"
         "/habits - Посмотреть список привычек\n"
         "/progress - Посмотреть статистику привычек\n"
+        "/analyze - Получить анализ привычки с рекомендациями\n"
+        "/motivation - Получить мотивационное сообщение\n"
         "/help - Показать это сообщение\n\n"
         "<b>Как пользоваться ботом:</b>\n"
         "1. Создайте новую привычку командой /addhabit\n"
         "2. Выберите частоту напоминаний\n"
         "3. Установите время для напоминаний\n"
         "4. Отмечайте выполнение привычки по напоминаниям\n"
-        "5. Отслеживайте прогресс командой /progress"
+        "5. Отслеживайте прогресс командой /progress\n\n"
+        "<b>🧠 ИИ-помощник:</b>\n"
+        "• /analyze - Получите детальный анализ любой привычки:\n"
+        "  - Оценка сложности формирования\n"
+        "  - Рекомендуемая частота\n"
+        "  - Советы по формированию\n"
+        "  - Возможные препятствия\n\n"
+        "• /motivation - Получите персонализированное мотивационное сообщение\n"
+        "  для поддержания вашей текущей серии выполнений\n\n"
+        "<b>💡 Подсказка:</b>\n"
+        "Используйте команду /analyze перед созданием новой привычки,\n"
+        "чтобы получить рекомендации по её формированию!"
     )
     bot.reply_to(message, help_text, parse_mode='HTML')
 
@@ -250,12 +267,54 @@ def handle_cancel_delete(call):
         reply_markup=get_habit_management_keyboard(habit_id)
     )
 
+@bot.message_handler(commands=['analyze'])
+def analyze_habit(message):
+    user_states[message.from_user.id] = {'state': 'waiting_habit_for_analysis'}
+    bot.reply_to(message, "Какую привычку хотите проанализировать?")
+
+@bot.message_handler(func=lambda message: user_states.get(message.from_user.id, {}).get('state') == 'waiting_habit_for_analysis')
+def handle_habit_analysis(message):
+    analysis = gpt.analyze_habit(message.text)
+    del user_states[message.from_user.id]
+    bot.reply_to(message, analysis, parse_mode='MarkdownV2')
+
+@bot.message_handler(commands=['motivation'])
+def get_motivation(message):
+    habits = get_user_habits(message.from_user.id)
+    if not habits:
+        bot.reply_to(message, "У вас пока нет активных привычек.")
+        return
+    
+    keyboard = InlineKeyboardMarkup()
+    for habit in habits:
+        keyboard.add(InlineKeyboardButton(
+            habit.name, 
+            callback_data=f"motivate_{habit.id}"
+        ))
+    
+    bot.reply_to(
+        message,
+        "Выберите привычку для получения мотивации:",
+        reply_markup=keyboard
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('motivate_'))
+def handle_motivation(call):
+    habit_id = int(call.data.split('_')[1])
+    habit = get_habit_by_id(habit_id)
+    if habit:
+        streak = calculate_streak(habit_id)
+        motivation = gpt.get_motivation(habit.name, streak)
+        bot.edit_message_text(
+            motivation,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='MarkdownV2'
+        )
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     logging.info("Бот запущен")
-    
-    # Временно: добавляем тестовые данные
-    add_test_completions()
     
     try:
         # Инициализация напоминаний для существующих привычек
